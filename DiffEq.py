@@ -118,8 +118,9 @@ class RungeKutta(Method):
 # the class for the main window of our application
 class MyWindow(QMainWindow):
     # for the initialization we need the equation, all methods and parameters no and N
-    def __init__(self, eq, methods, n0, N):
+    def __init__(self, eq, methods, n0, N, ):
         super(MyWindow, self).__init__()
+        self.controller = Controller(eq, n0, N, methods, [True, True, True, True], self)
         # initialization of fields for user input of x0, y0, n, X, n0 , N and filling it with initial values
         # QLineEdit means a field for input the values
         self.lineEdit_x0 = QLineEdit('0')
@@ -147,7 +148,7 @@ class MyWindow(QMainWindow):
         # button for replotting graphs
         button = QPushButton('Plot')
         # create the object for 3 tabs
-        self.table_widget = MyTableWidget(self, eq=eq, methods=methods, n0=n0, N=N)
+        self.table_widget = MyTableWidget(self)
         # we need QHBoxLayouts and QVBoxLayouts to construct horizontal and vertical box layout objects correspondingly
         # the general layout
         layout = QHBoxLayout()
@@ -193,86 +194,20 @@ class MyWindow(QMainWindow):
         # set the general layout as the layout for the general widget
         widget.setLayout(layout)
         # if the button is clicked, we need to change parameters of the equation and to replot the graph
-        button.clicked.connect(self.change_parameters)
+        button.clicked.connect(self.controller.change_parameters)
         # if some checkBox changes its state, we need to add/remove the corresponding method to the graph
         for checkBox in self.checkBoxes:
-            checkBox.stateChanged.connect(self.moderateMethods)
+            checkBox.stateChanged.connect(self.controller.moderateMethods)
         # set the general widget as the central widget
         self.setCentralWidget(widget)
         # plot the initial graph
-        self.change_parameters()
-
-    # the function for changing the parameters of the equation and replotting the graph
-    def change_parameters(self):
-        # if user did not fill some parameter, we should print the error
-        for lineEdit in self.lineEdits:
-            if lineEdit.text() == '':
-                QMessageBox.about(self, "Error", "You did not fill all items!")
-                return
-        # read all the user input
-        x0 = int(self.lineEdit_x0.text())
-        y0 = int(self.lineEdit_y0.text())
-        n = int(self.lineEdit_n.text())
-        X = int(self.lineEdit_X.text())
-        n0 = int(self.lineEdit_n0.text())
-        N = int(self.lineEdit_N.text())
-        # if number of steps is less than 2, we should print the error
-        if n < 2:
-            QMessageBox.about(self, "Error", "n should be not less than 2!")
-            return
-        # the same if the x0 is not less than X
-        if x0 >= X:
-            QMessageBox.about(self, "Error", "X should be greater than x0!")
-            return
-        # if n0 is less than 2, we need to print the error
-        if n0 < 2:
-            QMessageBox.about(self, "Error", "n0 should be not less than 2!")
-            return
-        # if N is not greater than n0, we need to print the error
-        if N <= n0:
-            QMessageBox.about(self, "Error", "N should be greater than n0!")
-            return
-        # change all parameters of our equation, n0 and N
-        self.table_widget.eq.x0 = x0
-        self.table_widget.eq.y0 = y0
-        self.table_widget.eq.n = n
-        self.table_widget.eq.X = X
-        self.table_widget.n0 = n0
-        self.table_widget.N = N
-        # replot the graph
-        self.table_widget.plot()
-
-    # the method for adding the methods to the graphs / removing it
-    def moderateMethods(self, state):
-        # if the user wants to add some method to the graphs
-        if state == QtCore.Qt.Checked:
-            # find the method the user wants to add
-            for i in range(len(self.checkBoxes)):
-                if self.sender() == self.checkBoxes[i]:
-                    # set that we need to plot this method
-                    self.table_widget.plotMethods[i] = True
-        # if the user wants to remove some method from the graph
-        else:
-            # find the method the user wants to remove
-            for i in range(len(self.checkBoxes)):
-                if self.sender() == self.checkBoxes[i]:
-                    # set that we don't need to plot this graph
-                    self.table_widget.plotMethods[i] = False
-        # replot all the graphs
-        self.table_widget.plot()
+        self.controller.update()
 
 
 # the class fot the tabs
 class MyTableWidget(QWidget):
-    def __init__(self, parent, eq, methods, n0, N):
+    def __init__(self, parent):
         super(QWidget, self).__init__(parent)
-        # initialize the equation, n0, N and the methods
-        self.eq = eq
-        self.n0 = n0
-        self.N = N
-        self.methods = methods
-        # list that checks whether we need to plot the given method or not
-        self.plotMethods = [True, True, True, True]
         # colours for the methods in the graph
         self.colours = ['b-', 'g-', 'r-', 'k-']
         # initialize the figures for the graphs
@@ -327,33 +262,28 @@ class MyTableWidget(QWidget):
         self.setLayout(layout)
 
     # function for replotting the graphs
-    def plot(self):
+    def plot(self, results, n0, N):
         axes = []
         # clear all the figures and add new subplots
         for figure in self.figures:
             figure.clear()
             axes.append(figure.add_subplot(111))
-        for method, plotMethod, colour in zip(self.methods, self.plotMethods, self.colours):
+        for (plotMethod, x, y, label, lte, gte), colour in zip(results, self.colours):
             # if we don't need to plot this method, just skip it
             if plotMethod is False:
                 continue
-            # apply this method
-            x, y, label = method.solve(self.eq)
-            # plot the results on the first tab
+            # plot the results of the method
             axes[0].plot(x, y, colour, label=label)
             axes[0].set_xlabel("x")
             axes[0].set_ylabel("y")
             axes[0].legend()
-            # compute LTE and the maximum of GTE
-            lte = method.LTE(x, self.eq)
-            gte = method.GTE(self.eq, self.n0, self.N)
             # plot LTe of the second tab
             axes[1].plot(x, lte, colour, label=label)
             axes[1].legend()
             axes[1].set_xlabel("x")
             axes[1].set_ylabel("LTE")
             # plot the maximum of GTE on the third tab
-            axes[2].plot(np.arange(self.n0, self.N + 1), gte, colour, label=label)
+            axes[2].plot(np.arange(n0, N + 1), gte, colour, label=label)
             axes[2].legend()
             axes[2].set_xlabel("n")
             axes[2].set_ylabel("The maximum of GTE")
@@ -361,6 +291,89 @@ class MyTableWidget(QWidget):
         self.canvas_solutions.draw()
         self.canvas_LTE.draw()
         self.canvas_GTE.draw()
+
+
+# the Controller
+class Controller:
+    # initialization of the class
+    def __init__(self, eq, n0, N, methods, plotMethods, window):
+        self.eq = eq
+        self.n0 = n0
+        self.N = N
+        self.methods = methods
+        self.plotMethods = plotMethods
+        self.window = window
+
+    # the function for changing the parameters of the equation and replotting the graph
+    def change_parameters(self):
+        # if user did not fill some parameter, we should print the error
+        for lineEdit in self.window.lineEdits:
+            if lineEdit.text() == '':
+                QMessageBox.about(self.window, "Error", "You did not fill all items!")
+                return
+        # read all the user input
+        x0 = int(self.window.lineEdit_x0.text())
+        y0 = int(self.window.lineEdit_y0.text())
+        n = int(self.window.lineEdit_n.text())
+        X = int(self.window.lineEdit_X.text())
+        n0 = int(self.window.lineEdit_n0.text())
+        N = int(self.window.lineEdit_N.text())
+        # if number of steps is less than 2, we should print the error
+        if n < 2:
+            QMessageBox.about(self.window, "Error", "n should be not less than 2!")
+            return
+        # the same if the x0 is not less than X
+        if x0 >= X:
+            QMessageBox.about(self.window, "Error", "X should be greater than x0!")
+            return
+        # if n0 is less than 2, we need to print the error
+        if n0 < 2:
+            QMessageBox.about(self.window, "Error", "n0 should be not less than 2!")
+            return
+        # if N is not greater than n0, we need to print the error
+        if N <= n0:
+            QMessageBox.about(self.window, "Error", "N should be greater than n0!")
+            return
+        # change all parameters of our equation, n0 and N
+        self.eq.x0 = x0
+        self.eq.y0 = y0
+        self.eq.n = n
+        self.eq.X = X
+        self.n0 = n0
+        self.N = N
+        # update the results
+        self.update()
+
+    # the method for adding the methods to the graphs / removing it
+    def moderateMethods(self, state):
+        # if the user wants to add some method to the graphs
+        if state == QtCore.Qt.Checked:
+            # find the method the user wants to add
+            for i in range(len(self.window.checkBoxes)):
+                if self.window.sender() == self.window.checkBoxes[i]:
+                    # set that we need to plot this method
+                    self.plotMethods[i] = True
+        # if the user wants to remove some method from the graph
+        else:
+            # find the method the user wants to remove
+            for i in range(len(self.window.checkBoxes)):
+                if self.window.sender() == self.window.checkBoxes[i]:
+                    # set that we don't need to plot this graph
+                    self.plotMethods[i] = False
+        # update the results
+        self.update()
+
+    # the function for updating the results
+    def update(self):
+        results = []
+        for method, plotMethod in zip(self.methods, self.plotMethods):
+            # apply this method
+            x, y, label = method.solve(self.eq)
+            # compute LTE and the maximum of GTE
+            lte = method.LTE(x, self.eq)
+            gte = method.GTE(self.eq, self.n0, self.N)
+            results.append((plotMethod, x, y, label, lte, gte))
+        self.window.table_widget.plot(results, self.n0, self. N)
 
 
 # initialize our equation
